@@ -1,0 +1,18 @@
+{
+    "projects_dir": "/Users/user/Desktop/code",
+    "default-env-vars": {
+        "CONFIG_DATABASE_ENABLED": "true",
+        "CONFIG_SERVER_ADDR": "http://127.0.0.1:8081",
+        "CONFIG_SERVER_ENABLED": "false",
+        "CUSTOM_REDIS_PROVIDER_ENABLED": "true",
+        "java.awt.headless": "false",
+        "MAX_POOL_DB": "10",
+        "PROJECT_CACHE_TYPE": "redis",
+        "PROJECT_SQL_DATABASE": "admin",
+        "PROJECT_SQL_PASSWORD": "admin",
+        "PROJECT_SQL_PORT": "3306",
+        "PROJECT_SQL_SERVER": "127.0.0.1",
+        "PROJECT_SQL_USER": "root",
+        "PROJECT_TIME_ZONE": "GMT-3"
+    }
+}
