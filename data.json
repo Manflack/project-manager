@@ -1,6 +1,6 @@
 {
     "projects_dir": "/Users/user/Desktop/code",
-    "default-env-vars": {
+    "default_env_vars": {
         "CONFIG_DATABASE_ENABLED": "true",
         "CONFIG_SERVER_ADDR": "http://127.0.0.1:8081",
         "CONFIG_SERVER_ENABLED": "false",

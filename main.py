@@ -67,7 +67,7 @@ def run_command(command, project_name, log_widget):
     process.wait()
 
 def start_project(project_name, log_widget):
-    default_vars = mapVariables.get('default-env-vars') or {}
+    default_vars = mapVariables.get('default_env_vars') or {}
     project_vars = mapVariables.get_or_default(project_name, {})
     env_vars = {**default_vars, **project_vars}
     env_str = ' --'.join([f'{key}={value}' for key, value in env_vars.items()])
