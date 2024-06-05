@@ -108,10 +108,13 @@ def detect_projects():
 root = tk.Tk()
 root.title("Gestor de Proyectos")
 
-projects_frame = ttk.Frame(root)
+main_frame = ttk.Frame(root)
+main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+projects_frame = ttk.Frame(main_frame)
 projects_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 
-details_frame = ttk.Frame(root)
+details_frame = ttk.Frame(main_frame)
 details_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 project_list = tk.Listbox(projects_frame)
@@ -121,25 +124,31 @@ projects = detect_projects()
 for project in projects:
     project_list.insert(tk.END, project)
 
-common_vars_frame = ttk.LabelFrame(details_frame, text="Variables Comunes")
+if projects:
+    project_list.selection_set(0)
+    load_project_details(None)
+
+variables_frame = ttk.Frame(details_frame)
+variables_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+common_vars_frame = ttk.LabelFrame(variables_frame, text="Variables Comunes")
 common_vars_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 common_vars_text = scrolledtext.ScrolledText(common_vars_frame, height=10)
-common_vars_text.pack(fill=tk.X, expand=True)
+common_vars_text.pack(fill=tk.BOTH, expand=True)
 
-project_vars_frame = ttk.LabelFrame(details_frame, text="Variables de Entorno")
+project_vars_frame = ttk.LabelFrame(variables_frame, text="Variables de Entorno")
 project_vars_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 env_vars_text = scrolledtext.ScrolledText(project_vars_frame, height=10)
-env_vars_text.pack(fill=tk.X, expand=True)
+env_vars_text.pack(fill=tk.BOTH, expand=True)
 
-ttk.Label(details_frame, text="Logs:").pack(anchor=tk.W)
-log_frames = {}
+log_frame = ttk.LabelFrame(details_frame, text="Logs")
+log_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
 log_texts = {}
-
 for project in projects:
-    log_frames[project] = ttk.Frame(details_frame)
-    log_texts[project] = scrolledtext.ScrolledText(log_frames[project], height=10)
+    log_texts[project] = scrolledtext.ScrolledText(log_frame, height=10)
     log_texts[project].pack(fill=tk.BOTH, expand=True)
 
 def load_project_details(event):
@@ -159,9 +168,9 @@ def load_project_details(event):
         for key, value in project_env_vars.items():
             env_vars_text.insert(tk.END, f'{key}={value}\n')
 
-    for frame in log_frames.values():
-        frame.pack_forget()
-    log_frames[selected_project].pack(fill=tk.BOTH, expand=True)
+    for text_widget in log_texts.values():
+        text_widget.pack_forget()
+    log_texts[selected_project].pack(fill=tk.BOTH, expand=True)
 
 project_list.bind("<<ListboxSelect>>", load_project_details)
 
@@ -208,7 +217,7 @@ common_vars_text.bind("<FocusOut>", save_common_env)
 env_vars_text.bind("<FocusOut>", save_project_env)
 
 buttons_frame = ttk.Frame(details_frame)
-buttons_frame.pack(fill=tk.X)
+buttons_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
 
 ttk.Button(buttons_frame, text="Iniciar", command=lambda: start_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Detener", command=lambda: stop_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
