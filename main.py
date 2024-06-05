@@ -58,6 +58,7 @@ def is_process_running(pid):
     return True
 
 def run_command(command, project_name, log_widget):
+    print(command)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     mapVariables.add_dict('PIDS', project_name, process.pid)
     for line in iter(process.stdout.readline, b''):
@@ -67,15 +68,20 @@ def run_command(command, project_name, log_widget):
     process.wait()
 
 def start_project(project_name, log_widget):
+    if check_and_stop_process(project_name, log_widget):
+        return
     default_vars = mapVariables.get('default_env_vars') or {}
     project_vars = mapVariables.get_or_default(project_name, {})
     env_vars = {**default_vars, **project_vars}
     env_str = ' --'.join([f'{key}={value}' for key, value in env_vars.items()])
-    command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean compile spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=local {env_str}"'
-    print(command)
+    command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean compile spring-boot:run -Dspring-boot.run.arguments="{env_str}"'
     threading.Thread(target=run_command, args=(command, project_name, log_widget)).start()
 
 def stop_project(project_name, log_widget):
+    if check_and_stop_process(project_name, log_widget):
+        return
+
+def check_and_stop_process(project_name, log_widget):
     processes = mapVariables.get('PIDS') or {}
     if project_name in processes:
         pid = processes[project_name]
@@ -86,12 +92,10 @@ def stop_project(project_name, log_widget):
             except OSError as e:
                 log_widget.insert(tk.END, f'Error al detener {project_name}: {str(e)}\n')
             log_widget.insert(tk.END, f'{project_name} detenido\n')
-            print(f'{project_name} detenido\n')
             log_widget.yview(tk.END)
             mapVariables.remove_dict('PIDS', project_name)
-            return
-        log_widget.insert(tk.END, f'No se encontró el PID para {project_name}\n')
-        log_widget.yview(tk.END)
+            return True
+    return False
 
 def restart_project(project_name, log_widget):
     stop_project(project_name, log_widget)
@@ -117,8 +121,16 @@ projects = detect_projects()
 for project in projects:
     project_list.insert(tk.END, project)
 
-ttk.Label(details_frame, text="Variables de Entorno:").pack(anchor=tk.W)
-env_vars_text = scrolledtext.ScrolledText(details_frame, height=10)
+common_vars_frame = ttk.LabelFrame(details_frame, text="Variables Comunes")
+common_vars_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+common_vars_text = scrolledtext.ScrolledText(common_vars_frame, height=10)
+common_vars_text.pack(fill=tk.X, expand=True)
+
+project_vars_frame = ttk.LabelFrame(details_frame, text="Variables de Entorno")
+project_vars_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+env_vars_text = scrolledtext.ScrolledText(project_vars_frame, height=10)
 env_vars_text.pack(fill=tk.X, expand=True)
 
 ttk.Label(details_frame, text="Logs:").pack(anchor=tk.W)
@@ -134,6 +146,13 @@ def load_project_details(event):
     if not project_list.curselection():
         return
     selected_project = project_list.get(project_list.curselection())
+    
+    common_vars_text.delete(1.0, tk.END)
+    default_vars = mapVariables.get('default_env_vars')
+    if default_vars:
+        for key, value in default_vars.items():
+            common_vars_text.insert(tk.END, f'{key}={value}\n')
+    
     env_vars_text.delete(1.0, tk.END)
     project_env_vars = mapVariables.get(selected_project)
     if project_env_vars:
@@ -146,7 +165,16 @@ def load_project_details(event):
 
 project_list.bind("<<ListboxSelect>>", load_project_details)
 
-def save_project_env():
+def save_common_env(event=None):
+    default_env_vars = {}
+    common_vars_text_content = common_vars_text.get(1.0, tk.END).strip().split('\n')
+    for line in common_vars_text_content:
+        if '=' in line:
+            key, value = line.strip().split('=', 1)
+            default_env_vars[key] = value
+    mapVariables.set('default_env_vars', default_env_vars)
+
+def save_project_env(event=None):
     if not project_list.curselection():
         return
     selected_project = project_list.get(project_list.curselection())
@@ -158,6 +186,27 @@ def save_project_env():
             env_vars[key] = value
     mapVariables.set(selected_project, env_vars)
 
+def stop_all_processes(log_widget):
+    processes = mapVariables.get('PIDS') or {}
+    processes_to_remove = []
+    for project_name, pid in processes.items():
+        if is_process_running(pid):
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+            except OSError as e:
+                log_widget.insert(tk.END, f'Error al detener {project_name}: {str(e)}\n')
+            log_widget.insert(tk.END, f'{project_name} detenido\n')
+            print(f'{project_name} detenido\n')
+            log_widget.yview(tk.END)
+            processes_to_remove.append(project_name)
+
+    for project_name in processes_to_remove:
+        mapVariables.remove_dict('PIDS', project_name)
+
+common_vars_text.bind("<FocusOut>", save_common_env)
+env_vars_text.bind("<FocusOut>", save_project_env)
+
 buttons_frame = ttk.Frame(details_frame)
 buttons_frame.pack(fill=tk.X)
 
@@ -165,5 +214,7 @@ ttk.Button(buttons_frame, text="Iniciar", command=lambda: start_project(project_
 ttk.Button(buttons_frame, text="Detener", command=lambda: stop_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Reiniciar", command=lambda: restart_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Guardar Variables", command=save_project_env).pack(side=tk.LEFT, padx=5, pady=5)
+
+stop_all_processes(log_texts[project_list.get(tk.ACTIVE)])
 
 root.mainloop()
