@@ -57,10 +57,11 @@ def is_process_running(pid):
         return False
     return True
 
-def run_command(command, project_name, log_widget):
+def run_command(command, project_name, log_widget, is_build=False):
     print(command)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    mapVariables.add_dict('PIDS', project_name, process.pid)
+    if not is_build:
+        mapVariables.add_dict('PIDS', project_name, process.pid)
     for line in iter(process.stdout.readline, b''):
         log_widget.insert(tk.END, line.decode('utf-8'))
         log_widget.yview(tk.END)
@@ -74,8 +75,17 @@ def start_project(project_name, log_widget):
     project_vars = mapVariables.get_or_default(project_name, {})
     env_vars = {**default_vars, **project_vars}
     env_str = ' --'.join([f'{key}={value}' for key, value in env_vars.items()])
-    command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean compile spring-boot:run -Dspring-boot.run.arguments="{env_str}"'
-    threading.Thread(target=run_command, args=(command, project_name, log_widget)).start()
+
+    build_command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean package'
+    build_thread = threading.Thread(target=run_command, args=(build_command, project_name, log_widget, True))
+    print("before_start")
+    build_thread.start()
+    print("after_start")
+    build_thread.join()
+
+    jar_path = os.path.join(BASE_PATH, project_name, 'target', '*.jar') 
+    run_command_str = f'java -Xms256m -Xmx384m -Djava.awt.headless=false -jar {jar_path} {env_str}'
+    threading.Thread(target=run_command, args=(run_command_str, project_name, log_widget)).start()
 
 def stop_project(project_name, log_widget):
     if check_and_stop_process(project_name, log_widget):
@@ -117,16 +127,12 @@ projects_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 details_frame = ttk.Frame(main_frame)
 details_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-project_list = tk.Listbox(projects_frame)
+project_list = tk.Listbox(projects_frame, exportselection=False)
 project_list.pack(fill=tk.Y, expand=True)
 
 projects = detect_projects()
 for project in projects:
     project_list.insert(tk.END, project)
-
-if projects:
-    project_list.selection_set(0)
-    load_project_details(None)
 
 variables_frame = ttk.Frame(details_frame)
 variables_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -171,6 +177,10 @@ def load_project_details(event):
     for text_widget in log_texts.values():
         text_widget.pack_forget()
     log_texts[selected_project].pack(fill=tk.BOTH, expand=True)
+
+if projects:
+    project_list.selection_set(0)
+    load_project_details(None)
 
 project_list.bind("<<ListboxSelect>>", load_project_details)
 
@@ -217,7 +227,7 @@ common_vars_text.bind("<FocusOut>", save_common_env)
 env_vars_text.bind("<FocusOut>", save_project_env)
 
 buttons_frame = ttk.Frame(details_frame)
-buttons_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+buttons_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
 ttk.Button(buttons_frame, text="Iniciar", command=lambda: start_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Detener", command=lambda: stop_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
