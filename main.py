@@ -77,14 +77,8 @@ def start_project(project_name, log_widget):
     env_str = ' --'.join([f'{key}={value}' for key, value in env_vars.items()])
 
     build_command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean package'
-    build_thread = threading.Thread(target=run_command, args=(build_command, project_name, log_widget, True))
-    print("before_start")
-    build_thread.start()
-    print("after_start")
-    build_thread.join()
-
     jar_path = os.path.join(BASE_PATH, project_name, 'target', '*.jar') 
-    run_command_str = f'java -Xms256m -Xmx384m -Djava.awt.headless=false -jar {jar_path} {env_str}'
+    run_command_str = f'{build_command}; java -Xms256m -Xmx512m -Djava.awt.headless=false -jar {jar_path} {env_str}'
     threading.Thread(target=run_command, args=(run_command_str, project_name, log_widget)).start()
 
 def stop_project(project_name, log_widget):
