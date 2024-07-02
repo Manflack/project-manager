@@ -79,13 +79,10 @@ def build_docker_image(project_name, log_widget):
         log_widget.insert(tk.END, f"Error al construir la imagen de Docker: {str(e)}\n")
         return False
 
-
 def stream_logs(container, log_widget):
     for log in container.logs(stream=True, follow=True):
         log_widget.insert(tk.END, log.decode('utf-8'))
         log_widget.yview(tk.END)
-
-import subprocess
 
 def build_java_project(project_name, log_widget):
     project_path = os.path.join(BASE_PATH, project_name)
@@ -124,8 +121,7 @@ def start_project(project_name, log_widget):
             name=project_name,
             detach=True,
             network="docker_network",
-            ports={f"{env_vars.get('server.port', '8080')}/tcp": env_vars.get('server.port', '8080')},
-            publish_all_ports=True,
+            ports={f"{env_vars.get('server.port', '8080')}/tcp": int(env_vars.get('server.port', '8080'))},
             remove=True
         )
         mapVariables.add_dict('CONTAINERS', project_name, container.id)
@@ -217,13 +213,13 @@ def load_project_details(event):
     
     common_vars_text.delete(1.0, tk.END)
     default_vars = mapVariables.get('default_env_vars')
-    if default_vars:
+    if (default_vars):
         for key, value in default_vars.items():
             common_vars_text.insert(tk.END, f'{key}={value}\n')
     
     env_vars_text.delete(1.0, tk.END)
     project_env_vars = mapVariables.get(selected_project)
-    if project_env_vars:
+    if (project_env_vars):
         for key, value in project_env_vars.items():
             env_vars_text.insert(tk.END, f'{key}={value}\n')
 
