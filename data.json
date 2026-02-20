@@ -1,18 +1,64 @@
 {
-    "projects_dir": "/Users/user/Desktop/code",
     "default_env_vars": {
-        "CONFIG_DATABASE_ENABLED": "true",
-        "CONFIG_SERVER_ADDR": "http://127.0.0.1:8081",
-        "CONFIG_SERVER_ENABLED": "false",
-        "CUSTOM_REDIS_PROVIDER_ENABLED": "true",
         "java.awt.headless": "false",
+        "spring.profiles.active": "qa",
+        "CONFIG_DATABASE_ENABLED": "false",
+        "CONFIG_SERVER_ADDR": "http://flexibility-config-manager:8081",
+        "CONFIG_SERVER_ENABLED": "true",
+        "CUSTOM_REDIS_PROVIDER_ENABLED": "true",
         "MAX_POOL_DB": "10",
         "PROJECT_CACHE_TYPE": "redis",
-        "PROJECT_SQL_DATABASE": "admin",
-        "PROJECT_SQL_PASSWORD": "admin",
+        "PROJECT_SQL_DATABASE": "plug",
+        "PROJECT_SQL_PASSWORD": "root",
         "PROJECT_SQL_PORT": "3306",
-        "PROJECT_SQL_SERVER": "127.0.0.1",
+        "PROJECT_SQL_SERVER": "host.docker.internal",
         "PROJECT_SQL_USER": "root",
-        "PROJECT_TIME_ZONE": "GMT-3"
-    }
+        "PROJECT_TIME_ZONE": "GMT-3",
+        "REDIS_PORT": "6379",
+        "REDIS_PROVIDER_ENABLED": "true",
+        "REDIS_SERVER": "host.docker.internal",
+        "REFRESH_ENABLED": "false"
+    },
+    "users-api": {
+        "server.port": "8087",
+        "spring.profiles.active": "qa",
+        "CONFIG_SERVER_ENABLED": "true",
+        "AUTH_ENABLED": "false"
+    },
+    "flexibility-config-manager": {
+        "KAFKA_ENABLED": "false",
+        "spring.profiles.active": "jdbc",
+        "server.port": "8081"
+    },
+    "PIDS": {},
+    "auth-server": {},
+    "backoffice-manager": {
+        "server.port": "8888",
+        "provider.auth.server.url": "http://host.docker.internal:8102",
+        "provider.auth.server.path": "/auth-server/",
+        "provider.users.withSecurity": "false",
+        "provider.users.url": "http://users-api:8087",
+        "provider.users.path": "/users-api",
+        "CONFIG_SERVER_ENABLED": "true"
+    },
+    "credential-api": {
+        "server.port": "8088"
+    },
+    "business-manager": {
+        "server.port": "8090",
+        "provider.credentials.url": "http://credential-api:8088",
+        "provider.auth.server.url": "http://host.docker.internal:8102",
+        "provider.auth.server.path": "/auth-server",
+        "provider.users.url": "http://users-api:8087",
+        "provider.users.path": "/users-api"
+    },
+    "jposgateway": {},
+    "plug-library": {},
+    "coelsa-connector": {
+        "server.port": "8100",
+        "CONFIG_SERVER_ENABLED": "true"
+    },
+    "jkds": {},
+    "ypf-business-manager": {},
+    "CONTAINERS": {}
 }

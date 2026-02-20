@@ -4,7 +4,10 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 import subprocess
 import threading
-import signal
+import docker
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class PersistentHashMap:
     def __init__(self, filename='data.json'):
@@ -48,54 +51,113 @@ class PersistentHashMap:
             self._save_data()
 
 mapVariables = PersistentHashMap()
-BASE_PATH = mapVariables.get_or_default('projects_dir', os.path.dirname(os.path.abspath(__file__)))
+BASE_PATH = os.environ.get('PROJECTS_DIR', os.path.dirname(os.path.abspath(__file__)))
+client = docker.from_env()
 
-def is_process_running(pid):
+def create_dockerfile(project_name, env_vars):
+    env_vars_str = '\n'.join([f'ENV {key}="{value}"' for key, value in env_vars.items()])
+    dockerfile_content = f"""
+FROM openjdk:11-jre-slim
+WORKDIR /app
+COPY target/*.jar app.jar
+{env_vars_str}
+EXPOSE {env_vars.get('server.port', '8080')}
+CMD ["java", "-Xms256m", "-Xmx512m", "-Djava.awt.headless=false", "-jar", "app.jar"]
+"""
+    dockerfile_path = os.path.join(BASE_PATH, project_name, 'Dockerfile')
+    with open(dockerfile_path, 'w') as f:
+        f.write(dockerfile_content)
+    return dockerfile_path
+
+def build_docker_image(project_name, log_widget):
+    dockerfile_path = os.path.join(BASE_PATH, project_name)
     try:
-        os.kill(pid, 0)
-    except OSError:
+        image, logs = client.images.build(path=dockerfile_path, tag=f"{project_name.lower()}:latest", rm=True)
+        for log in logs:
+            if 'stream' in log:
+                log_widget.insert(tk.END, log['stream'])
+                log_widget.yview(tk.END)
+        return True
+    except docker.errors.BuildError as e:
+        log_widget.insert(tk.END, f"Error al construir la imagen de Docker: {str(e)}\n")
         return False
-    return True
 
-def run_command(command, project_name, log_widget):
-    print(command)
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    mapVariables.add_dict('PIDS', project_name, process.pid)
-    for line in iter(process.stdout.readline, b''):
-        log_widget.insert(tk.END, line.decode('utf-8'))
+def stream_logs(container, log_widget):
+    for log in container.logs(stream=True, follow=True):
+        log_widget.insert(tk.END, log.decode('utf-8'))
         log_widget.yview(tk.END)
-    process.stdout.close()
-    process.wait()
+
+def build_java_project(project_name, log_widget):
+    project_path = os.path.join(BASE_PATH, project_name)
+    try:
+        log_widget.insert(tk.END, f"Construyendo proyecto Java: {project_name}\n")
+        result = subprocess.run(['mvn', 'clean', 'package', '-DskipTests'], 
+                                cwd=project_path, 
+                                capture_output=True, 
+                                text=True)
+        log_widget.insert(tk.END, result.stdout)
+        log_widget.insert(tk.END, result.stderr)
+        if result.returncode != 0:
+            log_widget.insert(tk.END, "Error al construir el proyecto Java\n")
+            return False
+        log_widget.insert(tk.END, "Proyecto Java construido exitosamente\n")
+        return True
+    except Exception as e:
+        log_widget.insert(tk.END, f"Error al construir el proyecto Java: {str(e)}\n")
+        return False
 
 def start_project(project_name, log_widget):
-    if check_and_stop_process(project_name, log_widget):
-        return
     default_vars = mapVariables.get('default_env_vars') or {}
     project_vars = mapVariables.get_or_default(project_name, {})
     env_vars = {**default_vars, **project_vars}
-    env_str = ' --'.join([f'{key}={value}' for key, value in env_vars.items()])
-    command = f'cd {os.path.join(BASE_PATH, project_name)} && mvn clean compile spring-boot:run -Dspring-boot.run.arguments="{env_str}"'
-    threading.Thread(target=run_command, args=(command, project_name, log_widget)).start()
+    
+    if not build_java_project(project_name, log_widget):
+        return
+    
+    dockerfile_path = create_dockerfile(project_name, env_vars)
+    
+    build_docker_image(project_name, log_widget)
+    
+    try:
+        container = client.containers.run(
+            f"{project_name.lower()}:latest",
+            name=project_name,
+            detach=True,
+            network="docker_network",
+            ports={f"{env_vars.get('server.port', '8080')}/tcp": int(env_vars.get('server.port', '8080'))},
+            remove=True
+        )
+        mapVariables.add_dict('CONTAINERS', project_name, container.id)
+        log_widget.insert(tk.END, f"Contenedor {project_name} iniciado\n")
+        
+        threading.Thread(target=stream_logs, args=(container, log_widget), daemon=True).start()
+        
+        def check_container_status():
+            container.reload()
+            if container.status == 'exited':
+                log_widget.insert(tk.END, f"Contenedor {project_name} se ha detenido. Código de salida: {container.attrs['State']['ExitCode']}\n")
+                mapVariables.remove_dict('CONTAINERS', project_name)
+            else:
+                root.after(500, check_container_status)  # Verificar cada 5 segundos
+        
+        root.after(500, check_container_status)
+        
+    except docker.errors.APIError as e:
+        log_widget.insert(tk.END, f"Error al iniciar el contenedor: {str(e)}\n")
 
 def stop_project(project_name, log_widget):
-    if check_and_stop_process(project_name, log_widget):
-        return
-
-def check_and_stop_process(project_name, log_widget):
-    processes = mapVariables.get('PIDS') or {}
-    if project_name in processes:
-        pid = processes[project_name]
-        if is_process_running(pid):
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            except OSError as e:
-                log_widget.insert(tk.END, f'Error al detener {project_name}: {str(e)}\n')
-            log_widget.insert(tk.END, f'{project_name} detenido\n')
-            log_widget.yview(tk.END)
-            mapVariables.remove_dict('PIDS', project_name)
-            return True
-    return False
+    containers = mapVariables.get('CONTAINERS') or {}
+    if project_name in containers:
+        container_id = containers[project_name]
+        try:
+            container = client.containers.get(container_id)
+            container.stop()
+            log_widget.insert(tk.END, f"Contenedor {project_name} detenido\n")
+        except docker.errors.NotFound:
+            log_widget.insert(tk.END, f"Contenedor {project_name} no encontrado\n")
+        except docker.errors.APIError as e:
+            log_widget.insert(tk.END, f"Error al detener el contenedor: {str(e)}\n")
+        mapVariables.remove_dict('CONTAINERS', project_name)
 
 def restart_project(project_name, log_widget):
     stop_project(project_name, log_widget)
@@ -117,16 +179,12 @@ projects_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 details_frame = ttk.Frame(main_frame)
 details_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-project_list = tk.Listbox(projects_frame)
+project_list = tk.Listbox(projects_frame, exportselection=False)
 project_list.pack(fill=tk.Y, expand=True)
 
 projects = detect_projects()
 for project in projects:
     project_list.insert(tk.END, project)
-
-if projects:
-    project_list.selection_set(0)
-    load_project_details(None)
 
 variables_frame = ttk.Frame(details_frame)
 variables_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -158,19 +216,23 @@ def load_project_details(event):
     
     common_vars_text.delete(1.0, tk.END)
     default_vars = mapVariables.get('default_env_vars')
-    if default_vars:
+    if (default_vars):
         for key, value in default_vars.items():
             common_vars_text.insert(tk.END, f'{key}={value}\n')
     
     env_vars_text.delete(1.0, tk.END)
     project_env_vars = mapVariables.get(selected_project)
-    if project_env_vars:
+    if (project_env_vars):
         for key, value in project_env_vars.items():
             env_vars_text.insert(tk.END, f'{key}={value}\n')
 
     for text_widget in log_texts.values():
         text_widget.pack_forget()
     log_texts[selected_project].pack(fill=tk.BOTH, expand=True)
+
+if projects:
+    project_list.selection_set(0)
+    load_project_details(None)
 
 project_list.bind("<<ListboxSelect>>", load_project_details)
 
@@ -195,35 +257,15 @@ def save_project_env(event=None):
             env_vars[key] = value
     mapVariables.set(selected_project, env_vars)
 
-def stop_all_processes(log_widget):
-    processes = mapVariables.get('PIDS') or {}
-    processes_to_remove = []
-    for project_name, pid in processes.items():
-        if is_process_running(pid):
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            except OSError as e:
-                log_widget.insert(tk.END, f'Error al detener {project_name}: {str(e)}\n')
-            log_widget.insert(tk.END, f'{project_name} detenido\n')
-            print(f'{project_name} detenido\n')
-            log_widget.yview(tk.END)
-            processes_to_remove.append(project_name)
-
-    for project_name in processes_to_remove:
-        mapVariables.remove_dict('PIDS', project_name)
-
 common_vars_text.bind("<FocusOut>", save_common_env)
 env_vars_text.bind("<FocusOut>", save_project_env)
 
 buttons_frame = ttk.Frame(details_frame)
-buttons_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+buttons_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
 ttk.Button(buttons_frame, text="Iniciar", command=lambda: start_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Detener", command=lambda: stop_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Reiniciar", command=lambda: restart_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Guardar Variables", command=save_project_env).pack(side=tk.LEFT, padx=5, pady=5)
-
-stop_all_processes(log_texts[project_list.get(tk.ACTIVE)])
 
 root.mainloop()
