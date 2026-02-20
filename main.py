@@ -5,6 +5,9 @@ from tkinter import ttk, scrolledtext
 import subprocess
 import threading
 import docker
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class PersistentHashMap:
     def __init__(self, filename='data.json'):
@@ -48,7 +51,7 @@ class PersistentHashMap:
             self._save_data()
 
 mapVariables = PersistentHashMap()
-BASE_PATH = mapVariables.get_or_default('projects_dir', os.path.dirname(os.path.abspath(__file__)))
+BASE_PATH = os.environ.get('PROJECTS_DIR', os.path.dirname(os.path.abspath(__file__)))
 client = docker.from_env()
 
 def create_dockerfile(project_name, env_vars):
@@ -254,21 +257,6 @@ def save_project_env(event=None):
             env_vars[key] = value
     mapVariables.set(selected_project, env_vars)
 
-'''
-def stop_all_processes(log_widget):
-    containers = mapVariables.get('CONTAINERS') or {}
-    for project_name, container_id in containers.items():
-        try:
-            container = client.containers.get(container_id)
-            container.stop()
-            log_widget.insert(tk.END, f"Contenedor {project_name} detenido\n")
-        except docker.errors.NotFound:
-            log_widget.insert(tk.END, f"Contenedor {project_name} no encontrado\n")
-        except docker.errors.APIError as e:
-            log_widget.insert(tk.END, f"Error al detener el contenedor {project_name}: {str(e)}\n")
-    mapVariables.set('CONTAINERS', {})
-'''
-
 common_vars_text.bind("<FocusOut>", save_common_env)
 env_vars_text.bind("<FocusOut>", save_project_env)
 
@@ -279,7 +267,5 @@ ttk.Button(buttons_frame, text="Iniciar", command=lambda: start_project(project_
 ttk.Button(buttons_frame, text="Detener", command=lambda: stop_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Reiniciar", command=lambda: restart_project(project_list.get(tk.ACTIVE), log_texts[project_list.get(tk.ACTIVE)])).pack(side=tk.LEFT, padx=5, pady=5)
 ttk.Button(buttons_frame, text="Guardar Variables", command=save_project_env).pack(side=tk.LEFT, padx=5, pady=5)
-
-#stop_all_processes(log_texts[project_list.get(tk.ACTIVE)])
 
 root.mainloop()
